@@ -1,0 +1,1064 @@
+---
+title: "Assignement Exam"
+author: "Michele Berti, Gianluca Guglielmo, Niccolò Tosato, Isacco Zinna"
+date: "1/14/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Prove
+
+```{r}
+#needed for function shift
+library(magic)
+library(zoo)
+```
+
+
+```{r}
+shifted <-function(col, shift=10){
+  res = magic::shift(col, i=shift)
+  if (shift > 0){
+    res[seq.int(from=1, length.out=abs(shift))] = NA
+  }
+  if (shift < 0){
+    res[seq.int(to=length(res), length.out=abs(shift))] = NA # setting the tail of the array to NA
+  }
+  res
+}
+```
+
+
+(just code in this section)
+```{r gath, echo = FALSE}
+ds <- read.csv("https://raw.githubusercontent.com/pcm-dpc/COVID-19/master/dati-regioni/dpc-covid19-ita-regioni.csv")
+
+
+
+ds.camp <- ds[ds$denominazione_regione == "Campania", ]
+rm(ds)
+tempd <- data.frame(nuovi_positivi_orig = ds.camp$nuovi_positivi)
+ds.camp$data <- as.POSIXct(ds.camp$data, tryFormats = c("%Y-%m-%d %H:%M:%OS",
+                          "%Y/%m/%d %H:%M:%OS",
+                          "%Y-%m-%d %H:%M",
+                          "%Y/%m/%d %H:%M",
+                          "%Y-%m-%d",
+                          "%Y/%m/%d"))
+
+#cumulativi : deceduti,tamponi,totale_casi,casi_testati
+ds.camp$deceduti=c(0,diff(ds.camp$deceduti)) #metto gli attuali al posto del cumulativo
+ds.camp$tamponi=c(0,diff(ds.camp$tamponi)) #metto gli attuali al posto del cumulativo
+ds.camp$casi_testati=c(0,diff(ds.camp$casi_testati)) #metto gli attuali al posto del cumulativo
+colonne=c("data",
+          "ricoverati_con_sintomi",#"ricoverati_con_sintomi_variazione",
+          "terapia_intensiva",#"terapia_intensiva_variazione",
+          #"totale_ospedalizzati",#"totale_ospedalizzati_variazione",
+          "isolamento_domiciliare",#"isolamento_domiciliare_variazione",
+          #"totale_positivi",#"totale_positivi_variazione",
+          "nuovi_positivi",#"nuovi_positivi_variazione",
+          "dimessi_guariti",#"dimessi_guariti_variazione",
+          "deceduti",#"deceduti_variazione",
+          "tamponi",#"tamponi_variazione",
+          "casi_testati")#,"casi_testati_variazione")
+
+
+colonne=colonne[-1]
+for(i in colonne) {
+  temp=ds.camp[,as.character(i)]
+  temp=c(0,diff(temp))
+  temp=temp/shifted(ds.camp[,as.character(i)],1)
+  temp[is.nan(temp)]=0
+  ds.camp[,as.character(paste0(i,"_variazione"))]=temp
+}
+
+ds.camp[ds.camp==Inf]=1
+ds.camp[ds.camp==-Inf]=-1
+
+#riordino le colonne in maniera accettabile
+colonne=c("data",
+          "ricoverati_con_sintomi","ricoverati_con_sintomi_variazione",
+          "terapia_intensiva","terapia_intensiva_variazione",
+          #"totale_ospedalizzati","totale_ospedalizzati_variazione",
+          "isolamento_domiciliare","isolamento_domiciliare_variazione",
+          #"totale_positivi","totale_positivi_variazione",
+          "nuovi_positivi","nuovi_positivi_variazione",
+          "dimessi_guariti","dimessi_guariti_variazione",
+          "deceduti","deceduti_variazione",
+          "tamponi","tamponi_variazione",
+          "casi_testati","casi_testati_variazione",
+          "walking", "driving")
+
+apple <- read.csv("https://raw.githubusercontent.com/ActiveConclusion/COVID19_mobility/master/apple_reports/apple_mobility_report.csv")
+apple.camp <- apple[apple$subregion_and_city == "Campania Region",]
+
+apple.camp <- apple.camp[as.POSIXct(apple.camp$date, format = "%Y-%m-%d") >=  as.POSIXct("2020-02-24", format = "%Y-%m-%d"),]
+
+ds.camp <- ds.camp[ds.camp$data < Sys.Date() - 1,]
+
+ds.camp$walking <- apple.camp$walking
+ds.camp$driving <- apple.camp$driving
+
+ds.camp=subset(ds.camp, select = colonne)
+
+colonne=colonne[-1]
+
+for (i in colonne){
+  ds.camp[i] <- rollmean(ds.camp[i], k=7, fill=NA, align="center")
+}
+
+ds.camp$nuovi_positivi_orig <- 0
+tempd <- head(tempd, -2)
+ds.camp$nuovi_positivi_orig <- tempd$nuovi_positivi_orig
+rm(colonne)
+rm(temp)
+
+```
+
+
+```{r gath, echo = FALSE}
+
+
+
+#new range to delete the superfluous day needed for the difference
+
+
+#ds.camp.range <- ds.camp[ds.camp$data >= 
+#                          as.POSIXct("2020-09-01 00:00:00", 
+#                          format = "%Y-%m-%d %H:%M:%OS"),]
+
+# Scattered Rt from github
+url <- 'https://raw.githubusercontent.com/Biuni/rt-italy/master/src/data/Rt.csv'
+rt <- readr::read_csv(url)
+rt.camp <- rt[rt$state == "Campania",]
+rt.cut <- rt.camp[rt.camp$date > as.POSIXct("2020-08-01", format = "%Y-%m-%d"),]
+ds.camp$rt <- 0
+length(rt.cut$date)
+for (i in 1:length(ds.camp$data)){
+  for (j in 1:length(rt.cut$date)){
+    if (as.POSIXct(ds.camp$data[i]) < as.POSIXct(rt.cut$date[j])){
+      ds.camp$rt[i] <- rt.cut$ML[j]
+      break
+   }
+  }
+}
+
+ 
+
+# Continuous Rt from Harvard
+
+ 
+
+url2 <- "https://dataverse.harvard.edu/api/access/datafile/4346906?format=original&gbrecs=true"
+rt3 <- readr::read_csv(url2)
+rt3.cut <- rt3[rt3$region == "Campania",]
+for (i in 1:length(ds.camp$data)){
+  for (j in 1:length(rt3.cut$date)){
+    if (as.Date(as.POSIXct(ds.camp$data[i])) == as.Date(as.POSIXct(rt3.cut$date[j]))){
+      ds.camp$rt[i] <- rt3.cut$mean[j]
+  #    print(j)
+  #    print(rt3.cut$mean[j])
+  #    print(ds.camp.range$rt[i])
+      break
+    }
+  }
+}
+rm(rt)
+rm(rt.camp)
+rm(rt.cut)
+rm(rt3)
+rm(rt3.cut)
+ds.camp$color <- "White"
+
+
+
+ds.camp[ds.camp$data >= 
+                          as.POSIXct("2020-11-06 00:00:00", 
+                          format = "%Y-%m-%d %H:%M:%OS") & ds.camp$data <=
+                          as.POSIXct("2020-11-14 00:00:00", 
+                          format = "%Y-%m-%d %H:%M:%OS"),]$color <- "Yellow"
+
+ds.camp[ds.camp$data >=
+                          as.POSIXct("2020-11-15 00:00:00", 
+                          format = "%Y-%m-%d %H:%M:%OS") & ds.camp$data <=
+                          as.POSIXct("2020-12-05 00:00:00", 
+                          format = "%Y-%m-%d %H:%M:%OS"),]$color <- "Red"
+
+ds.camp[ds.camp$data >=
+                          as.POSIXct("2020-12-06 00:00:00", 
+                          format = "%Y-%m-%d %H:%M:%OS") & ds.camp$data <=
+                          as.POSIXct("2020-12-23 00:00:00", 
+                          format = "%Y-%m-%d %H:%M:%OS"),]$color <- "Orange"
+
+ds.camp[ds.camp$data >=   as.POSIXct("2020-12-23 00:00:00", 
+                          format = "%Y-%m-%d %H:%M:%OS") & ds.camp$data <=                              as.POSIXct("2020-12-31 00:00:00", 
+                          format = "%Y-%m-%d %H:%M:%OS"),]$color <- "Red"
+
+ds.camp[ds.camp$data >=   as.POSIXct("2021-01-01 00:00:00", 
+                          format = "%Y-%m-%d %H:%M:%OS") & ds.camp$data <=                              as.POSIXct("2021-01-06 00:00:00", 
+                          format = "%Y-%m-%d %H:%M:%OS"),]$color <- "Orange"
+
+ds.camp[ds.camp$data >=  as.POSIXct("2020-12-25 00:00:00", 
+                          format = "%Y-%m-%d %H:%M:%OS") &
+          ds.camp$data <   as.POSIXct("2020-12-26 00:00:00", 
+                          format = "%Y-%m-%d %H:%M:%OS"),]$color <- "Red"
+
+ds.camp[ds.camp$data >
+                          as.POSIXct("2021-01-06 00:00:00", 
+                          format = "%Y-%m-%d %H:%M:%OS"),]$color <- "Yellow"
+
+ds.camp[ds.camp$data >=
+                          as.POSIXct("2021-01-09 00:00:00", 
+                          format = "%Y-%m-%d %H:%M:%OS"),]$color <- "Yellow"#"Orange"
+
+ds.camp[ds.camp$data >=
+                          as.POSIXct("2021-01-11 00:00:00", 
+                          format = "%Y-%m-%d %H:%M:%OS"),]$color <- "Yellow"
+
+
+
+
+
+ds.camp$color=as.factor(ds.camp$color)
+ds.camp$tamp_rate=ds.camp$nuovi_positivi/ds.camp$casi_testati
+ds.camp$tamp_rate_variazione=ds.camp$nuovi_positivi_variazione/ds.camp$casi_testati_variazione
+```
+```{r, echo = TRUE}
+library(ltm)
+chart.Correlation(ds.camp[, c("nuovi_positivi",
+                              "ricoverati_con_sintomi",
+                              "isolamento_domiciliare",
+                              "terapia_intensiva",
+                              "rt",
+                              "driving",
+                              "tamponi_variazione")])
+```
+
+```{r, echo = TRUE}
+
+library(pracma)
+ds.camp$difference <- ds.camp$nuovi_positivi_orig - ds.camp$nuovi_positivi
+
+ds.camp$day <- weekdays(as.POSIXct(ds.camp$data))
+
+df3 = data.frame(data = ds.camp$data,
+                  day = ds.camp$day,
+                  nuovi_positivi_orig = ds.camp$nuovi_positivi_orig)
+
+df3$difference <- 0 
+df3$difference = ds.camp$difference
+df3$day <- factor(df3$day, levels = c("lunedì", "martedì", "mercoledì", "giovedì",
+                                      "venerdì", "sabato", "domenica"))
+
+displacement <- vector(mode = "integer", length = 7)
+
+for (i in 1:length(df3$data)){
+  if (!is.na(df3$difference[i])){
+  if(strcmp(as.character(df3$day[i]), "lunedì")){
+    displacement[1] = displacement[1] + df3$difference[i]
+  }
+  if(strcmp(as.character(df3$day[i]), "martedì")){
+    displacement[2] = displacement[2] + df3$difference[i]
+  }
+  if(strcmp(as.character(df3$day[i]), "mercoledì")){
+    displacement[3] = displacement[3] + df3$difference[i]
+  }
+  if(strcmp(as.character(df3$day[i]), "giovedì")){
+    displacement[4] = displacement[4] + df3$difference[i]
+  }
+  if(strcmp(as.character(df3$day[i]), "venerdì")){
+    displacement[5] = displacement[5] + df3$difference[i]
+  }
+  if(strcmp(as.character(df3$day[i]), "sabato")){
+    displacement[6] = displacement[6] + df3$difference[i]
+  }
+  if(strcmp(as.character(df3$day[i]),"domenica")){
+    displacement[7] = displacement[7] + df3$difference[i]
+  }
+  count = count + 1
+  }
+}
+displacement <- displacement * 7/count
+
+library(plyr)
+
+library(RColorBrewer)
+library(ggplot2)
+display.brewer.all()
+ggplot(data = df3) +
+  geom_point(aes(x = data, y = difference, color = day)) +
+  xlim(as.POSIXct("2020-09-01 00:00:00", format = "%Y-%m-%d %H:%M:%OS"),
+       as.POSIXct("2021-02-14 00:00:00", format = "%Y-%m-%d %H:%M:%OS")) +
+       scale_color_manual(values = brewer.pal(7,"Spectral")) +
+  ylab("displacement")
+
+```
+
+```{r, echo = TRUE}
+#ADD COLORS
+range <- ds.camp[ds.camp$data > as.POSIXct("2020-09-01 00:00:00", 
+                          format = "%Y-%m-%d %H:%M:%OS"),]
+df2 <- data.frame(data = range$data,
+                  nuovi_positivi = range$nuovi_positivi,
+                  nuovi_positivi_orig = range$nuovi_positivi_orig)
+mdf <- reshape2::melt(df2, id.var = "data")
+
+ggplot(data=mdf) +
+  geom_line(aes(x=data, y=nuovi_positivi, color = "Original"), color = "black") +
+  geom_line(aes(x=data, y=nuovi_positivi_orig, color = "7-day avg"), color = "red") +
+  scale_color_discrete(labels = c("Original" = "black",
+                                  "7-day avg" = "red")) +
+  xlab("Date") +
+  ylab("Nuovi Positivi") +
+  xlim(as.POSIXct("2020-09-01 00:00:00", format = "%Y-%m-%d %H:%M:%OS"),
+       as.POSIXct("2021-02-14 00:00:00", format = "%Y-%m-%d %H:%M:%OS")) 
+mdf
+ggplot(mdf, aes(x = data, y = value, colour = variable)) + 
+    geom_line() +
+    scale_color_manual(values=c("black", "red"))
+  
+    
+
+
+
+  #+ geom_text(aes(x = as.POSIXct("2021-01-01 00:00:00", format = "%Y-%m-%d %H:%M:%OS"), y = 2000), label = "Terapia Intensiva", color = "blue", fontface = 0, size = 3, family = "Sans Serif") 
+
+```
+
+```{r, echo = TRUE}
+#ADD COLORS
+library(ggplot2)
+
+google=read.csv("./2020_IT_Region_Mobility_Report.csv")
+google=google[google$sub_region_1=="Campania",]
+google$date=as.Date(google$date)
+google=google[google$date>="2020-09-1",]
+google=google[google$sub_region_2=="",]
+
+
+
+google$retail_and_recreation_percent_change_from_baseline <- rollmean(google$retail_and_recreation_percent_change_from_baseline, k=7, fill=NA, align="center")
+
+
+range <- ds.camp[ds.camp$data > as.POSIXct("2020-09-01 00:00:00", 
+                          format = "%Y-%m-%d %H:%M:%OS"),]
+range[174] <- NA
+range <- range[-174, ]
+
+range$google <- google$retail_and_recreation_percent_change_from_baseline
+ggplot(data=range, aes(x=data, y=google, group=1)) +
+  #geom_line(data=range, aes(x=data, y=terapia_intensiva, group=1))+
+    geom_rect(aes(xmin=as.POSIXct("2020-09-01 00:00:00", format = "%Y-%m-%d %H:%M:%OS"),
+              xmax=as.POSIXct("2020-11-06 00:00:00", format = "%Y-%m-%d %H:%M:%OS"),
+              ymin=-Inf, ymax=Inf),
+              alpha = 0.01,
+              fill = "white") +
+  geom_rect(aes(xmin=as.POSIXct("2020-11-06 00:00:00", format = "%Y-%m-%d %H:%M:%OS"),
+              xmax=as.POSIXct("2020-11-15 00:00:00", format = "%Y-%m-%d %H:%M:%OS"),
+              ymin=-Inf, ymax=Inf),
+              alpha = 0.01,
+              fill = "#FFFF99") +
+  geom_rect(aes(xmin=as.POSIXct("2020-11-15 00:00:00", format = "%Y-%m-%d %H:%M:%OS"),
+              xmax=as.POSIXct("2020-12-05 00:00:00", format = "%Y-%m-%d %H:%M:%OS"),
+              ymin=-Inf, ymax=Inf),
+              alpha = 0.01,
+              fill = "red") +
+  geom_rect(aes(xmin=as.POSIXct("2020-12-05 00:00:00", format = "%Y-%m-%d %H:%M:%OS"),
+              xmax=as.POSIXct("2020-12-23 00:00:00", format = "%Y-%m-%d %H:%M:%OS"),
+              ymin=-Inf, ymax=Inf),
+              alpha = 0.01,
+              fill = "orange") +
+  geom_rect(aes(xmin=as.POSIXct("2020-12-23 00:00:00", format = "%Y-%m-%d %H:%M:%OS"),
+              xmax=as.POSIXct("2020-12-27 00:00:00", format = "%Y-%m-%d %H:%M:%OS"),
+              ymin=-Inf, ymax=Inf),
+              alpha = 0.01,
+              fill = "red") +
+  geom_rect(aes(xmin=as.POSIXct("2020-12-27 00:00:00", format = "%Y-%m-%d %H:%M:%OS"),
+              xmax=as.POSIXct("2020-12-29 00:00:00", format = "%Y-%m-%d %H:%M:%OS"),
+              ymin=-Inf, ymax=Inf),
+              alpha = 0.01,
+              fill = "orange") +
+  geom_rect(aes(xmin=as.POSIXct("2020-12-29 00:00:00", format = "%Y-%m-%d %H:%M:%OS"),
+              xmax=as.POSIXct("2021-01-03 00:00:00", format = "%Y-%m-%d %H:%M:%OS"),
+              ymin=-Inf, ymax=Inf),
+              alpha = 0.01,
+              fill = "red") +
+  geom_rect(aes(xmin=as.POSIXct("2021-01-03 00:00:00", format = "%Y-%m-%d %H:%M:%OS"),
+              xmax=as.POSIXct("2021-01-04 00:00:00", format = "%Y-%m-%d %H:%M:%OS"),
+              ymin=-Inf, ymax=Inf),
+              alpha = 0.01,
+              fill = "orange") +
+  geom_rect(aes(xmin=as.POSIXct("2021-01-04 00:00:00", format = "%Y-%m-%d %H:%M:%OS"),
+              xmax=as.POSIXct("2021-01-06 00:00:00", format = "%Y-%m-%d %H:%M:%OS"),
+              ymin=-Inf, ymax=Inf),
+              alpha = 0.01,
+              fill = "red") +
+  geom_rect(aes(xmin=as.POSIXct("2021-01-06 00:00:00", format = "%Y-%m-%d %H:%M:%OS"),
+              xmax=as.POSIXct("2021-01-09 00:00:00", format = "%Y-%m-%d %H:%M:%OS"),
+              ymin=-Inf, ymax=Inf),
+              alpha = 0.01,
+              fill = "#FFFF99") +
+  geom_rect(aes(xmin=as.POSIXct("2021-01-09 00:00:00", format = "%Y-%m-%d %H:%M:%OS"),
+              xmax=as.POSIXct("2021-01-11 00:00:00", format = "%Y-%m-%d %H:%M:%OS"),
+              ymin=-Inf, ymax=Inf),
+              alpha = 0.01,
+              fill = "orange") +
+  geom_rect(aes(xmin=as.POSIXct("2021-01-11 00:00:00", format = "%Y-%m-%d %H:%M:%OS"),
+              xmax=as.POSIXct("2021-02-14 00:00:00", format = "%Y-%m-%d %H:%M:%OS"),
+              ymin=-Inf, ymax=Inf),
+              alpha = 0.01,
+              fill = "#FFFF99") +
+  geom_line() +
+  #scale_x_continuous(breaks=1:7,labels=c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")) +
+  xlab("Date") +
+  ylab("Driving") +
+  xlim(as.POSIXct("2020-09-01 00:00:00", format = "%Y-%m-%d %H:%M:%OS"),
+       as.POSIXct("2021-02-14 00:00:00", format = "%Y-%m-%d %H:%M:%OS")) +
+  geom_hline(yintercept = 0)
+  
+
+
+```
+
+
+
+
+#New color
+Trying to assign a new color to the Christmas period to account for people's behaviour
+
+```{r, echo = TRUE}
+#shiftare rt
+
+library(DataCombine)
+
+date <- function(dd=1, mm, yy=2020){
+  text = paste(yy, "-", mm, "-", dd, " 00:00:00", sep="")
+  as.POSIXct(text, format = "%Y-%m-%d %H:%M:%OS")
+}
+
+
+
+d=ds.camp
+d_test = ds.camp
+#d_test$color = shifted(d_test$color, 14)
+#d_test$rt = shifted(d_test$rt, 14)
+d_test$temp = shifted(d_test$ricoverati_con_sintomi, -14)
+d_test = d_test[d_test$data <= date(01,02,2021) & d_test$data >= date(1,9,2020), ]
+
+#d$color=shifted(d$color,14)
+#d$rt=shifted(d$rt, 14)
+d$temp=shifted(d$ricoverati_con_sintomi, -14)
+d=d[d$data<=date(26,01,2021) & d$data>=date(1,9,2020), ]
+
+d$rt2 <- 1/d$rt
+d_test$rt2 <- 1/d_test$rt
+
+
+d$old_rt=shifted(d$rt, 14)
+d$old_color = shifted(d$color, 14)
+d_test$old_rt=shifted(d_test$rt, 14)
+d_test$old_color = shifted(d_test$color, 14)
+d$old_driving = shifted(d$driving, 14)
+d_test$old_driving = shifted(d_test$driving, 14)
+
+
+m_nuovi_positivi=glm(data=d,
+                  formula = nuovi_positivi ~
+                  I(terapia_intensiva):old_color +
+                  deceduti +
+                  old_rt:old_color +
+                  I(rt^2)+
+                  tamp_rate:old_color +
+                  I(tamp_rate^2), 
+                  family = Gamma(link="log"))
+
+summary(m_nuovi_positivi)
+#d_test$temp2 = shifted(d_test$isolamento_domiciliare, -14)
+plot(d_test$nuovi_positivi)
+lines(predict.glm(m_nuovi_positivi, d_test, type = "response"), col="blue")
+m_nuovi_positivi$temp = shifted(m_nuovi_positivi$fitted.values, 14)
+lines(m_nuovi_positivi$temp, col="red")
+
+#1515
+
+#20-6 Purple 1520
+#20-6 Red 1539
+#20-6 Orange 1543
+#20-6 Yellow 1558
+#20-6 White 1576
+#23-31 Purple 01-06 Orange 1508
+#23-31 Red 01-06 Orange 1515
+#23-31 Red 01-06 Orange but important days Ora 1515
+#23-31 Red 01-06 Purple 1520
+#23-31 Orange 01-06 Red 1543
+#20-6 Orange but important days red 1666
+#20-6 Orange but important days orange 1525
+#20-6 Orange but important days yellow 1525
+#20-6 Red but important days yellow 1537
+#20-6 Red but important days orange 1536
+#actual dates 1537
+
+
+m_nuovi_positivi=glm(data=d,
+                  formula = nuovi_positivi ~
+                  I(terapia_intensiva):old_color +
+                  deceduti +
+                  old_rt:old_color +
+                  old_driving +
+                  I(rt^2)+
+                  tamp_rate:old_color +
+                  I(tamp_rate^2), 
+                  family = Gamma(link="log"))
+
+summary(m_nuovi_positivi)
+#d_test$temp2 = shifted(d_test$isolamento_domiciliare, -14)
+plot(d_test$nuovi_positivi)
+lines(predict.glm(m_nuovi_positivi, d_test, type = "response"), col="blue")
+m_nuovi_positivi$temp = shifted(m_nuovi_positivi$fitted.values, 14)
+lines(m_nuovi_positivi$temp, col="red")
+
+#1516
+
+```
+
+
+
+
+
+
+
+
+ds.camp[ds.camp$data >=
+                          as.POSIXct("2020-12-24 00:00:00", 
+                          format = "%Y-%m-%d %H:%M:%OS") & ds.camp$data <=
+                          as.POSIXct("2020-12-27 00:00:00", 
+                          format = "%Y-%m-%d %H:%M:%OS"),]$color <- "Orange"#"Red"
+
+ds.camp[ds.camp$data >=
+                          as.POSIXct("2020-12-28 00:00:00", 
+                          format = "%Y-%m-%d %H:%M:%OS") & ds.camp$data <=
+                          as.POSIXct("2020-12-29 00:00:00", 
+                          format = "%Y-%m-%d %H:%M:%OS"),]$color <- "Orange"#"Yellow"
+
+ds.camp[ds.camp$data >=
+                          as.POSIXct("2020-12-30 00:00:00", 
+                          format = "%Y-%m-%d %H:%M:%OS") & ds.camp$data <=
+                          as.POSIXct("2021-01-03 00:00:00", 
+                          format = "%Y-%m-%d %H:%M:%OS"),]$color <- "Orange"#"Red"
+
+ds.camp[ds.camp$data ==
+                          as.POSIXct("2021-01-04 00:00:00", 
+                          format = "%Y-%m-%d %H:%M:%OS"),]$color <- "Orange"#"Yellow"
+
+ds.camp[ds.camp$data >=
+                          as.POSIXct("2021-01-05 00:00:00", 
+                          format = "%Y-%m-%d %H:%M:%OS") & ds.camp$data <=
+                          as.POSIXct("2021-01-06 00:00:00", 
+                          format = "%Y-%m-%d %H:%M:%OS"),]$color <- "Orange"#"Red"
+
+ds.camp[ds.camp$data >
+                          as.POSIXct("2021-01-06 00:00:00", 
+                          format = "%Y-%m-%d %H:%M:%OS"),]$color <- "Yellow"
+
+ds.camp[ds.camp$data >=
+                          as.POSIXct("2021-01-09 00:00:00", 
+                          format = "%Y-%m-%d %H:%M:%OS"),]$color <- "Yellow"#"Orange"
+
+ds.camp[ds.camp$data >=
+                          as.POSIXct("2021-01-11 00:00:00", 
+                          format = "%Y-%m-%d %H:%M:%OS"),]$color <- "Yellow"
+
+
+
+
+
+ds.camp$color=as.factor(ds.camp$color)
+ds.camp$tamp_rate=ds.camp$nuovi_positivi/ds.camp$casi_testati
+ds.camp$tamp_rate_variazione=ds.camp$nuovi_positivi_variazione/ds.camp$casi_testati_variazione
+
+
+
+```{r fig.height=13,fig.width=13}
+library(DataCombine)
+
+date <- function(dd=1, mm, yy=2020){
+  text = paste(yy, "-", mm, "-", dd, " 00:00:00", sep="")
+  as.POSIXct(text, format = "%Y-%m-%d %H:%M:%OS")
+}
+
+
+
+d=ds.camp
+d_test = ds.camp
+#d_test$color = shifted(d_test$color, 14)
+#d_test$rt = shifted(d_test$rt, 14)
+d_test$temp = shifted(d_test$ricoverati_con_sintomi, -14)
+d_test = d_test[d_test$data <= date(15,2,2021) & d_test$data >= date(1,9,2020), ]
+
+#d$color=shifted(d$color,14)
+#d$rt=shifted(d$rt, 14)
+d$temp=shifted(d$ricoverati_con_sintomi, -14)
+d=d[d$data<=date(26,01,2021) & d$data>=date(1,9,2020), ]
+
+d$rt2 <- 1/d$rt
+d_test$rt2 <- 1/d_test$rt
+```
+
+```{r, echo = TRUE}
+
+d$temp=shifted(d$nuovi_positivi, -14)
+d_test$temp=shifted(d_test$nuovi_positivi, -14)
+
+
+m_nuovi_positivi_col = glm(data=d, formula = temp ~ 
+                             tamp_rate:color +
+                             I(tamp_rate^2) +  
+                             terapia_intensiva +
+                             I(isolamento_domiciliare) +
+                             I(rt^2) +
+                             rt:color,
+                             #splines::ns(driving, 3),
+                           family = Gamma(link="log")
+                           )
+
+#1596
+summary(m_nuovi_positivi_col)
+
+plot(d$temp)
+lines(predict.glm(m_nuovi_positivi_col, d_test, type = "response"), col="blue")
+lines(m_nuovi_positivi_col$fitted.values, col="red")
+
+m_nuovi_positivi_col = glm(data=d, formula = temp ~ 
+                             tamp_rate:color +
+                             I(tamp_rate^2) +  
+                             I(isolamento_domiciliare) +
+                             I(rt^2) +
+                             rt:color +
+                             splines::ns(driving, 3) +
+                             driving:isolamento_domiciliare +
+                             driving:terapia_intensiva,
+                           family = Gamma(link="log")
+                           )
+
+#1556
+summary(m_nuovi_positivi_col)
+
+plot(d$temp)
+lines(predict.glm(m_nuovi_positivi_col, d_test, type = "response"), col="blue")
+lines(m_nuovi_positivi_col$fitted.values, col="red")
+
+m_nuovi_positivi_col = glm(data=d, formula = temp ~ 
+                             tamp_rate:color +
+                             I(tamp_rate^2) +  
+                             I(isolamento_domiciliare) +
+                             I(rt^2) +
+                             rt:color +
+                             splines::ns(driving, 3) +
+                             driving:isolamento_domiciliare +
+                             driving:terapia_intensiva +
+                             driving:color,
+                           family = Gamma(link="log")
+                           )
+
+#1551
+summary(m_nuovi_positivi_col)
+
+plot(d$temp)
+lines(predict.glm(m_nuovi_positivi_col, d_test, type = "response"), col="blue")
+lines(m_nuovi_positivi_col$fitted.values, col="red")
+
+
+m_nuovi_positivi_col = glm(data=d, formula = temp ~ 
+                             tamp_rate:color +
+                             I(tamp_rate^2) +  
+                             I(isolamento_domiciliare) +
+                             I(rt^2) +
+                             rt:color +
+                             splines::ns(driving, 5) +
+                             driving:isolamento_domiciliare +
+                             driving:terapia_intensiva,
+                           family = Gamma(link="log")
+                           )
+
+#1554
+summary(m_nuovi_positivi_col)
+
+plot(d$temp)
+lines(predict.glm(m_nuovi_positivi_col, d_test, type = "response"), col="blue")
+lines(m_nuovi_positivi_col$fitted.values, col="red")
+
+```
+
+
+
+
+```{r glm, echo = TRUE}
+d$temp=shifted(d$ricoverati_con_sintomi, -14)
+d_test$temp=shifted(d_test$ricoverati_con_sintomi, -14)
+
+
+m_ricoverati=glm(data=d,formula=temp~
+                  ricoverati_con_sintomi:color +
+                  ricoverati_con_sintomi_variazione +
+                  rt, 
+                  family = Gamma(link="log"))
+summary(m_ricoverati)
+d_test$temp2 = shifted(d_test$ricoverati_con_sintomi, -14)
+plot(d_test$temp2)
+lines(predict.glm(m_ricoverati, d_test, type = "response"), col="blue")
+lines(m_ricoverati$fitted.values, col="red")
+#1414.2
+
+
+#rt^(-1)
+d$rt2 <- 1/d$rt
+m_ricoverati=glm(data=d,formula=temp~
+                  ricoverati_con_sintomi:color +
+                  ricoverati_con_sintomi_variazione + 
+                  nuovi_positivi + 
+                  rt2, 
+                  family = Gamma(link="log"))
+summary(m_ricoverati)
+d_test$temp2 = shifted(d_test$ricoverati_con_sintomi, -14)
+plot(d_test$temp2)
+lines(predict.glm(m_ricoverati, d_test, type = "response"), col="blue")
+lines(m_ricoverati$fitted.values, col="red")
+#1463.4
+
+m_ricoverati=glm(data=d,formula=temp~
+                  ricoverati_con_sintomi:color +
+                  ricoverati_con_sintomi_variazione + 
+                  nuovi_positivi + 
+                  rt, 
+                  family = Gamma(link="log"))
+summary(m_ricoverati)
+d_test$temp2 = shifted(d_test$ricoverati_con_sintomi, -14)
+plot(d_test$temp2)
+lines(predict.glm(m_ricoverati, d_test, type = "response"), col="blue")
+lines(m_ricoverati$fitted.values, col="red")
+#1413.5
+
+d$temp=shifted(d$ricoverati_con_sintomi, -14)
+m_ricoverati=glm(data=d,formula=temp~
+                  poly(terapia_intensiva, 3, raw=TRUE) +
+                  poly(isolamento_domiciliare, 3, raw=TRUE) +
+                  rt:ricoverati_con_sintomi +
+                  rt:color, 
+                  family = Gamma(link="log"))
+summary(m_ricoverati)
+d_test$temp2 = shifted(d_test$ricoverati_con_sintomi, -14)
+plot(d_test$temp2)
+lines(predict.glm(m_ricoverati, d_test, type = "response"), col="blue")
+lines(m_ricoverati$fitted.values, col="red")
+#1264
+
+d$temp=shifted(d$ricoverati_con_sintomi, -14)
+m_ricoverati=glm(data=d,formula=temp~
+                  splines::ns(terapia_intensiva, 4) +
+                  splines::ns(isolamento_domiciliare, 4) +
+                  splines::ns(ricoverati_con_sintomi, 4) +
+                  rt:color +
+                  color, 
+                  family = Gamma(link="log"))
+summary(m_ricoverati)
+d_test$temp2 = shifted(d_test$ricoverati_con_sintomi, -14)
+plot(d_test$temp2)
+lines(predict.glm(m_ricoverati, d_test, type = "response"), col="blue")
+lines(m_ricoverati$fitted.values, col="red")
+#1159
+
+d$temp=shifted(d$ricoverati_con_sintomi, -14)
+m_ricoverati=glm(data=d,formula=temp~
+                  splines::ns(terapia_intensiva, 4) +
+                  splines::ns(isolamento_domiciliare, 4) +
+                  splines::ns(ricoverati_con_sintomi, 4) +
+                  rt:color +
+                  color +
+                  #splines::ns(driving, 2) +
+                  rt:driving, 
+                  family = Gamma(link="log"))
+summary(m_ricoverati)
+d_test$temp2 = shifted(d_test$ricoverati_con_sintomi, -14)
+plot(d_test$temp2)
+lines(predict.glm(m_ricoverati, d_test, type = "response"), col="blue")
+lines(m_ricoverati$fitted.values, col="red")
+#1227 ma miglior fit
+
+#Aumento significatività
+
+d$temp=shifted(d$ricoverati_con_sintomi, -14)
+m_ricoverati=glm(data=d,formula=temp~
+                  splines::ns(isolamento_domiciliare, 3) +
+                  splines::ns(terapia_intensiva, 4) +
+                  rt:color +
+                  #color +
+                  splines::ns(driving, 3) +
+                  rt:driving, 
+                  family = Gamma(link="log"))
+summary(m_ricoverati)
+d_test$temp2 = shifted(d_test$ricoverati_con_sintomi, -14)
+plot(d_test$temp2)
+lines(predict.glm(m_ricoverati, d_test, type = "response"), col="blue")
+lines(m_ricoverati$fitted.values, col="red")
+
+```
+
+
+
+
+
+
+```{r, echo = TRUE}
+
+d$temp=shifted(d$terapia_intensiva, -14)
+m_terapia_intensiva=glm(data=d,formula=temp~
+                  ricoverati_con_sintomi +
+                  splines::ns(isolamento_domiciliare, 5) +
+                  splines::ns(terapia_intensiva, 5), 
+                  family = Gamma(link="log"))
+summary(m_terapia_intensiva)
+d_test$temp2 = shifted(d_test$terapia_intensiva, -14)
+plot(d_test$temp2)
+lines(predict.glm(m_terapia_intensiva, d_test, type = "response"), col="blue")
+lines(m_terapia_intensiva$fitted.values, col="red")
+#736
+
+
+d$temp=shifted(d$terapia_intensiva, -14)
+m_terapia_intensiva=glm(data=d,formula=temp~
+                  splines::ns(isolamento_domiciliare, 5) +
+                  splines::ns(terapia_intensiva, 5) +
+                  splines::ns(tamp_rate, 5) +
+                  splines::ns(nuovi_positivi, 3), 
+                  family = Gamma(link="log"))
+summary(m_terapia_intensiva)
+d_test$temp2 = shifted(d_test$terapia_intensiva, -14)
+plot(d_test$temp2)
+lines(predict.glm(m_terapia_intensiva, d_test, type = "response"), col="blue")
+lines(m_terapia_intensiva$fitted.values, col="red")
+#708
+
+d$temp=shifted(d$terapia_intensiva, -14)
+m_terapia_intensiva=glm(data=d,formula=temp~
+                  splines::ns(isolamento_domiciliare, 5) +
+                  splines::ns(terapia_intensiva, 5) +
+                  splines::ns(tamp_rate, 5) +
+                  splines::ns(nuovi_positivi, 3) +
+                  splines::ns(driving, 2), 
+                  family = Gamma(link="log"))
+summary(m_terapia_intensiva)
+d_test$temp2 = shifted(d_test$terapia_intensiva, -14)
+plot(d_test$temp2)
+lines(predict.glm(m_terapia_intensiva, d_test, type = "response"), col="blue")
+lines(m_terapia_intensiva$fitted.values, col="red")
+#676
+
+#Aumento variabili con significatività
+
+d$temp=shifted(d$terapia_intensiva, -14)
+m_terapia_intensiva=glm(data=d,formula=temp~
+                  splines::ns(isolamento_domiciliare, 3) +
+                  splines::ns(terapia_intensiva, 3) +
+                  #splines::ns(tamp_rate, 2) +
+                  splines::ns(nuovi_positivi, 3) +
+                  splines::ns(driving, 3), 
+                  family = Gamma(link="log"))
+summary(m_terapia_intensiva)
+d_test$temp2 = shifted(d_test$terapia_intensiva, -14)
+plot(d_test$temp2)
+lines(predict.glm(m_terapia_intensiva, d_test, type = "response"), col="blue")
+lines(m_terapia_intensiva$fitted.values, col="red")
+#797
+
+d$temp=shifted(d$terapia_intensiva, -14)
+m_terapia_intensiva=glm(data=d,formula=temp~
+                  splines::ns(isolamento_domiciliare, 3) +
+                  splines::ns(terapia_intensiva, 3) +
+                  splines::ns(nuovi_positivi, 3) +
+                  splines::ns(driving, 3) +
+                  driving:tamp_rate +
+                  driving:rt, 
+                  family = Gamma(link="log"))
+summary(m_terapia_intensiva)
+d_test$temp2 = shifted(d_test$terapia_intensiva, -14)
+plot(d_test$temp2)
+lines(predict.glm(m_terapia_intensiva, d_test, type = "response"), col="blue")
+lines(m_terapia_intensiva$fitted.values, col="red")
+#784
+
+d$temp=shifted(d$terapia_intensiva, -14)
+m_terapia_intensiva=glm(data=d,formula=temp~
+                  splines::ns(isolamento_domiciliare, 3) +
+                  splines::ns(terapia_intensiva, 3) +
+                  splines::ns(nuovi_positivi, 3) +
+                  splines::ns(driving, 3) +
+                  driving:nuovi_positivi, 
+                  family = Gamma(link="log"))
+summary(m_terapia_intensiva)
+d_test$temp2 = shifted(d_test$terapia_intensiva, -14)
+plot(d_test$temp2)
+lines(predict.glm(m_terapia_intensiva, d_test, type = "response"), col="blue")
+lines(m_terapia_intensiva$fitted.values, col="red")
+#792
+
+#NOTA: TUTTI GLI AIC DEVONO ESSERE CONSIDERATI SE IL MODELLO FITTA FINO AL PRIMO GENNAIO
+```
+
+
+
+`
+
+
+```{r}
+d$temp=shifted(d$isolamento_domiciliare, -14)
+m_isolamento_domiciliare=glm(data=d,formula=temp~
+                  splines::ns(isolamento_domiciliare, 5) +
+                  splines::ns(terapia_intensiva, 5) +
+                  splines::ns(tamp_rate, 5) +
+                  splines::ns(nuovi_positivi, 3) +
+                  rt:color +
+                  color, 
+                  family = Gamma(link="log"))
+summary(m_isolamento_domiciliare)
+d_test$temp2 = shifted(d_test$isolamento_domiciliare, -14)
+plot(d_test$temp2)
+lines(predict.glm(m_isolamento_domiciliare, d_test, type = "response"), col="blue")
+lines(m_isolamento_domiciliare$fitted.values, col="red")
+
+d$temp=shifted(d$isolamento_domiciliare, -14)
+m_isolamento_domiciliare=glm(data=d,formula=temp~
+                  splines::ns(isolamento_domiciliare, 5) +
+                  splines::ns(terapia_intensiva, 5) +
+                  splines::ns(tamp_rate, 5) +
+                  splines::ns(nuovi_positivi, 3) +
+                  rt:color +
+                  color, 
+                  family = Gamma(link="log"))
+summary(m_isolamento_domiciliare)
+d_test$temp2 = shifted(d_test$isolamento_domiciliare, -14)
+plot(d_test$temp2)
+lines(predict.glm(m_isolamento_domiciliare, d_test, type = "response"), col="blue")
+lines(m_isolamento_domiciliare$fitted.values, col="red")
+#2102
+
+d$temp=shifted(d$isolamento_domiciliare, -14)
+m_isolamento_domiciliare=glm(data=d,formula=temp~
+                  splines::ns(isolamento_domiciliare, 5) +
+                  splines::ns(terapia_intensiva, 5) +
+                  splines::ns(tamp_rate, 5) +
+                  splines::ns(nuovi_positivi, 3) +
+                  rt:color +
+                  color +
+                  rt:driving +
+                  nuovi_positivi:driving, 
+                  family = Gamma(link="log"))
+summary(m_isolamento_domiciliare)
+d_test$temp2 = shifted(d_test$isolamento_domiciliare, -14)
+plot(d_test$temp2)
+lines(predict.glm(m_isolamento_domiciliare, d_test, type = "response"), col="blue")
+lines(m_isolamento_domiciliare$fitted.values, col="red")
+#2077
+
+d$temp=shifted(d$isolamento_domiciliare, -14)
+m_isolamento_domiciliare=glm(data=d,formula=temp~
+                  #splines::ns(isolamento_domiciliare, 5),
+                  splines::ns(terapia_intensiva, 5) + #tenere
+                  splines::ns(isolamento_domiciliare, 5) +
+                  #splines::ns(tamp_rate, 5) +
+                  splines::ns(isolamento_domiciliare,4),
+                  #rt:color +
+                  #rt:driving +
+                  #nuovi_positivi:driving, 
+                  family = Gamma(link="log"))
+summary(m_isolamento_domiciliare)
+d_test$temp2 = shifted(d_test$isolamento_domiciliare, -14)
+plot(d_test$temp2)
+lines(predict.glm(m_isolamento_domiciliare, d_test, type = "response"), col="blue")
+lines(m_isolamento_domiciliare$fitted.values, col="red")
+#2077
+```
+
+
+## Explanatory analysis
+
+
+We want to study `totale_positivi` in `Campania`. We should first plot some time-related data. `totale_positivi` represents the daily total of people that tested positive to COVID-19 and weren't already positive. PCRs are also used on already positive people that want to test if they still are. These last type positives doesn't add to the count. 
+
+Color: 
+
+* 6 Nov to 14 Nov  - Orange 
+* 15 Nov to 5 Dec - Red 
+* 6 Dec to 23 Dec - Orange 
+* 24 dec to 27 dec - Red 
+* 28 to 29 - Yellow 
+* 30 to 3 - Red
+* 4 - Yellow 
+* 5 to 6 Jan - Red 
+* 7 to ... - Yellow 
+
+Important events:
+
+* 3 Ott - mandatory masks and 22:00 curfew
+* 15 Ott - De Luca closed schools (but nidi and asili)
+* 24 Ott - protests against curfew
+* 30 Ott - De Luca closed nidi and asili
+* 24 Nov - gradual reopening of schools
+* 25 Nov - Maradona memorial with thousands of people
+* 25 Dec - Christmas
+* 31 Dec - New Year's eve
+
+## Quality of data
+
+Data is collected daily. The first consideration about the quality of data is related to the periodicity of drops in the number of daily cases and number of daily deaths. The PCR tests usually give a response in 48h. During the weekend less tests are carried and this results in less cases during mondays and tuesdays. The other weekdays are also scattered and the maximum is usually reached on a wednesday. To minimize this effect, a 7-day average could be used.
+
+A possible model for this phenomenon with the variables that we have at disposal could make use of `data`.
+
+Possible relationships between `data` and `totale_positivi` could be polynomial or, given the exponential nature of the phenomenon, even logistic.
+
+
+
+```{r}
+selection <- c("data","nuovi_positivi", "isolamento_domiciliare", "totale_ospedalizzati", "positivi_ieri", "dimessi_guariti", "deceduti", "tamp_rate", "tamp_rate_ieri")
+d2 <- d[selection]
+
+
+
+for (i in c("isolamento_domiciliare", "totale_ospedalizzati", "positivi_ieri", "dimessi_guariti", "deceduti")){
+  plot(d2[i], d2$nuovi_positivi, 
+       col=time_interval(d2$data),
+       main=i)
+}
+```
+
+
+```{r}
+plot(d2$tamp_rate_ieri, d2$tamp_rate - d2$tamp_rate_ieri, col=time_interval(d2$data, interval=10))
+abline(h=0)
+#plot(d2$nuovi_positivi, d2$positivi_ieri, col=d2$color)
+#lines(d2$tamp_rate_ieri, 0)
+```
+
+```{r}
+plot(d2$data, d2$tamp_rate_ieri, col=time_interval(d2$data, interval=10))
+abline(h=0)
+```
+
+```{r fig.width=9,fig.height=9}
+
+model_positivi=glm(data=d2,formula=nuovi_positivi~isolamento_domiciliare+totale_ospedalizzati+positivi_ieri+tamp_rate_ieri,  family = Gamma(link="log"))
+summary(model_positivi)
+#par(mfrow=c(2,2))
+plot(model_positivi)
+plot(model_positivi$fitted.values)
+points(d2$nuovi_positivi,col="red")
+
+
+```
+
+
+
+
+
+
