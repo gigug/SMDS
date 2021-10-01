@@ -1,5 +1,5 @@
 ## COVID-related ICUs in Campania
-Final Project from the course "Statistical Methods for Data Science" @ Data Science & Scientific Computing, University of Trieste, year 2020/2021. , written in RMarkdown.
+Final Project from the course "Statistical Methods for Data Science" @ Data Science & Scientific Computing, University of Trieste, year 2020/2021, written in RMarkdown.
 
 ## General Info
 
